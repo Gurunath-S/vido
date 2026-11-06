@@ -261,3 +261,4 @@ if __name__ == '__main__':
         generate_video_mask(args.input, args.output, args.boxes, args.sensitivity, args.dilation)
     else:
         process_single_frame(args.input, args.output, args.boxes, args.mask_only, args.sensitivity, args.dilation, args.radius, args.algorithm)
+
