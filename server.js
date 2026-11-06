@@ -78,6 +78,102 @@ async function probeVideo(filePath) {
   };
 }
 
+function buildFiltergraph(boxes, videoWidth, videoHeight, globalAlgorithm = 'delogo', blurSigma = 12) {
+  if (!boxes || boxes.length === 0) {
+    return null;
+  }
+
+  // Check for smart crop mode
+  if (globalAlgorithm === 'crop' || boxes.some(b => b.algorithm === 'crop')) {
+    let cropH = videoHeight;
+    for (const b of boxes) {
+      const by = Math.floor(b.y || 0);
+      if (by > videoHeight * 0.4) {
+        cropH = Math.min(cropH, by);
+      }
+    }
+    if (cropH % 2 !== 0) cropH -= 1;
+    cropH = Math.max(120, cropH);
+    return `crop=${videoWidth}:${cropH}:0:0`;
+  }
+
+  // Normalize each box to ensure it's inside video bounds and dimensions are even integers
+  const validBoxes = boxes.map(b => {
+    let x = Math.max(0, Math.floor(b.x));
+    let y = Math.max(0, Math.floor(b.y));
+    let w = Math.floor(b.w);
+    let h = Math.floor(b.h);
+
+    // Make dimensions even for filter compatibility
+    if (w % 2 !== 0) w += 1;
+    if (h % 2 !== 0) h += 1;
+
+    // Clamp within bounds
+    if (x + w > videoWidth) w = videoWidth - x;
+    if (y + h > videoHeight) h = videoHeight - y;
+
+    // Minimum size for filters
+    w = Math.max(4, w);
+    h = Math.max(4, h);
+
+    const algo = b.algorithm || globalAlgorithm || 'delogo';
+    return { x, y, w, h, algo };
+  }).filter(b => b.w >= 4 && b.h >= 4);
+
+  if (validBoxes.length === 0) return null;
+
+  // Build filter list
+  const filterParts = [];
+  const hasBlur = validBoxes.some(b => b.algo === 'blur');
+
+  if (!hasBlur) {
+    // Sequential chain of delogo and drawbox filters
+    const chain = validBoxes.map(b => {
+      if (b.algo === 'letterbox') {
+        return `drawbox=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:color=black:t=fill`;
+      } else {
+        // delogo
+        return `delogo=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:show=0`;
+      }
+    }).join(',');
+
+    return chain;
+  }
+
+  // Complex filtergraph when blur is used
+  validBoxes.forEach((b, idx) => {
+    const isFirst = idx === 0;
+    const isLast = idx === validBoxes.length - 1;
+    const prevPad = isFirst ? '' : `[tmp${idx - 1}]`;
+    const nextPad = isLast ? '' : `[tmp${idx}]`;
+
+    if (b.algo === 'letterbox') {
+      filterParts.push(`${prevPad}drawbox=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:color=black:t=fill${nextPad}`);
+    } else if (b.algo === 'blur') {
+      const splitA = `[sp_a${idx}]`;
+      const splitB = `[sp_b${idx}]`;
+      const cropPad = `[cr${idx}]`;
+      const blurPad = `[bl${idx}]`;
+
+      filterParts.push(`${prevPad}split=2${splitA}${splitB}`);
+      filterParts.push(`${splitB}crop=w=${b.w}:h=${b.h}:x=${b.x}:y=${b.y},gblur=sigma=${blurSigma}${cropPad}`);
+      filterParts.push(`${splitA}${cropPad}overlay=x=${b.x}:y=${b.y}${nextPad}`);
+    } else {
+      filterParts.push(`${prevPad}delogo=x=${b.x}:y=${b.y}:w=${b.w}:h=${b.h}:show=0${nextPad}`);
+    }
+  });
+
+  return filterParts.join(';');
+}
+
+/* ========================================================================= */
+/* API Routes                                                                */
+/* ========================================================================= */
+
+/**
+ * Scan standard local directories for quick loading
+ */
+
 app.get('/api/local-files', async (req, res) => {
   try {
     const searchDirs = [
