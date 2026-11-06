@@ -1,0 +1,30 @@
+{
+  "name": "vido",
+  "version": "1.0.0",
+  "description": "Studio-grade Zero-Loss Video Text & Watermark Remover Web App",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gurunath-S/vido.git"
+  },
+  "keywords": [
+    "video-processing",
+    "watermark-removal",
+    "delogo",
+    "lossless-video",
+    "inpaint",
+    "ffmpeg",
+    "vido"
+  ],
+  "author": "Gurunath-S",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}
